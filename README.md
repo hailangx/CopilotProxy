@@ -1,24 +1,34 @@
-# GitHub Copilot API Proxy for Claude Code
+# GitHub Models API Proxy
 
-A proxy server that translates Anthropic/Claude API requests to GitHub Models API format, allowing Claude Code to use GitHub's AI endpoints instead of Anthropic's API directly.
+A generic proxy server that exposes GitHub Models API as an **OpenAI-compatible** endpoint. Any app or tool that supports the OpenAI API format can use this proxy to access models through GitHub. Also includes an Anthropic-compatible endpoint for Claude Code.
 
 ## How It Works
 
 ```
-Claude Code  →  Proxy (localhost:8080)  →  GitHub Models API
-(Anthropic format)    (translates)         (OpenAI format)
+Any OpenAI-compatible app  →  Proxy (localhost:8080)  →  GitHub Models API
+(OpenAI format)                (pass-through + auth)     (GPT-4o, DeepSeek, etc.)
+
+Claude Code                →  Proxy (localhost:8080)  →  GitHub Models API
+(Anthropic format)             (translates format)       (GPT-4o, etc.)
 ```
 
-- Claude Code sends requests in Anthropic Messages API format
-- The proxy translates them to OpenAI/GitHub format
-- The proxy forwards to GitHub Models API (`models.inference.ai.azure.com`)
-- Responses are translated back to Anthropic format
+### OpenAI-compatible apps (Cursor, Continue, Open WebUI, etc.)
+- App sends standard `/v1/chat/completions` requests
+- Proxy adds GitHub auth and forwards directly
+- Responses pass through as-is (already OpenAI format)
+
+### Claude Code
+- Sends requests in Anthropic Messages API format
+- Proxy translates to OpenAI/GitHub format and back
 
 ## Features
 
-- Translates Anthropic Messages API → OpenAI/GitHub format
+- **OpenAI-compatible** `/v1/chat/completions` endpoint for any app
+- **Anthropic-compatible** `/v1/messages` endpoint for Claude Code
 - Streaming and non-streaming support
-- Model name mapping (Claude models → GitHub models)
+- Full tool/function calling pass-through
+- Model name mapping (Claude model names → GitHub models)
+- Access to all GitHub Models (GPT-4o, DeepSeek-R1, Phi-4, Mistral, etc.)
 - Token counting endpoint support
 - Auto-caps `max_tokens` to GitHub's 16384 limit
 - Auto-start on macOS login via LaunchAgent
@@ -72,10 +82,36 @@ In another terminal:
 curl -s http://localhost:8080/health
 # Should return: {"status":"ok","timestamp":"..."}
 
+# Test OpenAI-compatible endpoint
+curl -s -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello"}]}'
+
+# Test Anthropic-compatible endpoint (for Claude Code)
 curl -s -X POST http://localhost:8080/v1/messages \
   -H "Content-Type: application/json" \
   -d '{"model":"claude-3-5-sonnet-latest","max_tokens":100,"messages":[{"role":"user","content":"Hello"}]}'
-# Should return a response from GitHub Models API
+```
+
+### Using with OpenAI-compatible apps
+
+Set these environment variables in any app that supports OpenAI API:
+
+```bash
+OPENAI_API_BASE=http://localhost:8080/v1
+OPENAI_API_KEY=anything          # not validated, but some apps require it
+```
+
+Or in Python (openai SDK):
+
+```python
+import openai
+client = openai.OpenAI(base_url="http://localhost:8080/v1", api_key="dummy")
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)
 ```
 
 ### Step 6: Configure Auto-Start (macOS LaunchAgent)
