@@ -1,6 +1,6 @@
 # GitHub Models API Proxy
 
-A generic proxy server that exposes GitHub Models API as an **OpenAI-compatible** endpoint. Any app or tool that supports the OpenAI API format can use this proxy to access models through GitHub. Also includes an Anthropic-compatible endpoint for Claude Code.
+A cross-platform proxy server that exposes GitHub Models API as both **OpenAI-compatible** and **Anthropic-compatible** endpoints. Works with any app that supports OpenAI or Anthropic APIs — including Claude Code, Cursor, Continue, Open WebUI, and more.
 
 ## How It Works
 
@@ -12,15 +12,6 @@ Claude Code                →  Proxy (localhost:8080)  →  GitHub Models API
 (Anthropic format)             (translates format)       (GPT-4o, etc.)
 ```
 
-### OpenAI-compatible apps (Cursor, Continue, Open WebUI, etc.)
-- App sends standard `/v1/chat/completions` requests
-- Proxy adds GitHub auth and forwards directly
-- Responses pass through as-is (already OpenAI format)
-
-### Claude Code
-- Sends requests in Anthropic Messages API format
-- Proxy translates to OpenAI/GitHub format and back
-
 ## Features
 
 - **OpenAI-compatible** `/v1/chat/completions` endpoint for any app
@@ -31,38 +22,38 @@ Claude Code                →  Proxy (localhost:8080)  →  GitHub Models API
 - Access to all GitHub Models (GPT-4o, DeepSeek-R1, Phi-4, Mistral, etc.)
 - Token counting endpoint support
 - Auto-caps `max_tokens` to GitHub's 16384 limit
-- Auto-start on macOS login via LaunchAgent
+- **Cross-platform**: macOS and Windows support with platform-specific scripts
 
 ---
 
-## Full Setup Guide (macOS)
+## Quick Setup
 
-### Step 1: Prerequisites
+### Prerequisites
 
-- **Node.js 18+** (install via `brew install node`)
-- **GitHub Personal Access Token** with `models` permission
+- **Node.js 18+**
+- **GitHub Personal Access Token** with **Models → Read** permission
 
-### Step 2: Get a GitHub Token
+### 1. Get a GitHub Token
 
-1. Go to [GitHub Settings > Tokens](https://github.com/settings/tokens)
-2. Click **"Generate new token"** (fine-grained)
-3. Under **Account permissions**, enable **"Models" → Read** access
-4. Copy the token (starts with `github_pat_...`)
+1. Go to [GitHub Settings > Tokens](https://github.com/settings/tokens) (fine-grained)
+2. Under **Account permissions**, enable **"Models" → Read** access
+3. Copy the token (starts with `github_pat_...`)
 
-### Step 3: Clone and Install
+### 2. Clone and Install
 
 ```bash
-cd /Volumes/App/Vibe/copilot-proxy
+git clone https://github.com/hailangx/CopilotProxy.git
+cd CopilotProxy
 npm install
 ```
 
-### Step 4: Configure Environment
+### 3. Configure Environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` and add your GitHub token:
 
 ```env
 GITHUB_TOKEN=github_pat_YOUR_TOKEN_HERE
@@ -70,32 +61,46 @@ PORT=8080
 GITHUB_API_URL=https://models.inference.ai.azure.com
 ```
 
-### Step 5: Test the Proxy
+### 4. Platform-Specific Setup
 
-```bash
-npm start
-```
+Choose your platform:
 
-In another terminal:
+| Platform | Setup Guide | Scripts |
+|----------|-------------|---------|
+| **macOS** | [docs/setup-macos.md](docs/setup-macos.md) | `scripts/macos/` |
+| **Windows** | [docs/setup-windows.md](docs/setup-windows.md) | `scripts/windows/` |
 
-```bash
-curl -s http://localhost:8080/health
-# Should return: {"status":"ok","timestamp":"..."}
+---
 
-# Test OpenAI-compatible endpoint
-curl -s -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello"}]}'
+## API Endpoints
 
-# Test Anthropic-compatible endpoint (for Claude Code)
-curl -s -X POST http://localhost:8080/v1/messages \
-  -H "Content-Type: application/json" \
-  -d '{"model":"claude-3-5-sonnet-latest","max_tokens":100,"messages":[{"role":"user","content":"Hello"}]}'
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/chat/completions` | POST | OpenAI-compatible (any app) |
+| `/v1/messages` | POST | Anthropic Messages API (Claude Code) |
+| `/v1/messages/count_tokens` | POST | Token counting (estimated) |
+| `/v1/models` | GET | List available models |
+| `/v1/models/:model` | GET | Model info |
+| `/health` | GET | Health check |
 
-### Using with OpenAI-compatible apps
+## Model Mapping
 
-Set these environment variables in any app that supports OpenAI API:
+When you use Claude models, they're automatically mapped to GitHub models:
+
+| Claude Model | GitHub Model |
+|--------------|--------------|
+| claude-3-5-sonnet-* | gpt-4o |
+| claude-sonnet-4-* | gpt-4o |
+| claude-opus-4-* | gpt-4o |
+| claude-3-opus-* | gpt-4o |
+| claude-3-sonnet-* | gpt-4o |
+| claude-3-haiku-* | gpt-4o-mini |
+
+Customize in `lib/model-map.js`.
+
+## Using with OpenAI-compatible Apps
+
+Set these environment variables in any app that supports the OpenAI API:
 
 ```bash
 OPENAI_API_BASE=http://localhost:8080/v1
@@ -114,183 +119,61 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-### Step 6: Configure Auto-Start (macOS LaunchAgent)
-
-Create the LaunchAgent plist:
+## Testing the Proxy
 
 ```bash
-cat > ~/Library/LaunchAgents/com.copilot.proxy.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.copilot.proxy</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/opt/homebrew/bin/node</string>
-        <string>/Volumes/App/Vibe/copilot-proxy/server.js</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>/Volumes/App/Vibe/copilot-proxy</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/copilot-proxy.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/copilot-proxy.error.log</string>
-</dict>
-</plist>
-EOF
+# Health check
+curl http://localhost:8080/health
+
+# Test OpenAI endpoint
+curl -s -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello"}]}'
+
+# Test Anthropic endpoint
+curl -s -X POST http://localhost:8080/v1/messages \
+  -H "Content-Type: application/json" \
+  -d '{"model":"claude-3-5-sonnet-latest","max_tokens":100,"messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-Load it:
+## Project Structure
 
-```bash
-launchctl load ~/Library/LaunchAgents/com.copilot.proxy.plist
 ```
-
-> **Note:** Adjust the `node` path (`/opt/homebrew/bin/node`) and project path if yours differs. Find your node path with `which node`.
-
-### Step 7: Set Environment Variables for System-Wide Access
-
-Create the env LaunchAgent to persist env vars across reboots:
-
-```bash
-cat > ~/Library/LaunchAgents/com.copilot.proxy.env.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.copilot.proxy.env</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/sh</string>
-        <string>-c</string>
-        <string>launchctl setenv ANTHROPIC_BASE_URL http://localhost:8080; launchctl setenv ANTHROPIC_API_KEY sk-ant-proxy00000000000000000000000000000000000000000000</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-</dict>
-</plist>
-EOF
-
-launchctl load ~/Library/LaunchAgents/com.copilot.proxy.env.plist
+CopilotProxy/
+├── server.js                  # Main entry point
+├── lib/
+│   ├── proxy.js               # GitHub API proxy logic
+│   ├── anthropic-converter.js # Anthropic ↔ OpenAI format conversion
+│   └── model-map.js           # Model name mapping
+├── routes/
+│   ├── openai.js              # /v1/chat/completions
+│   ├── anthropic.js           # /v1/messages
+│   └── models.js              # /v1/models
+├── scripts/
+│   ├── macos/                 # macOS scripts (.sh)
+│   │   ├── start-proxy.sh
+│   │   ├── start-proxy-background.sh
+│   │   ├── stop-proxy.sh
+│   │   ├── patch-claude-config.sh
+│   │   ├── install-launchagent.sh
+│   │   └── uninstall-launchagent.sh
+│   └── windows/               # Windows scripts (.ps1)
+│       ├── start-proxy.ps1
+│       ├── start-proxy-background.ps1
+│       ├── stop-proxy.ps1
+│       ├── patch-claude-config.ps1
+│       ├── install-autostart.ps1
+│       └── uninstall-autostart.ps1
+├── docs/
+│   ├── setup-macos.md         # macOS setup guide
+│   └── setup-windows.md       # Windows setup guide
+├── tests/
+│   ├── unit-anthropic-converter.test.js
+│   ├── unit-model-map.test.js
+│   └── integration.test.js
+├── .env.example
+└── package.json
 ```
-
-Also set them immediately:
-
-```bash
-launchctl setenv ANTHROPIC_BASE_URL http://localhost:8080
-launchctl setenv ANTHROPIC_API_KEY sk-ant-proxy00000000000000000000000000000000000000000000
-```
-
-### Step 8: Configure Shell (`.zshrc`)
-
-Add to `~/.zshrc`:
-
-```bash
-export ANTHROPIC_BASE_URL=http://localhost:8080
-export ANTHROPIC_API_KEY=sk-ant-proxy00000000000000000000000000000000000000000000
-```
-
-> **Important:** The API key MUST start with `sk-ant-` prefix. Claude Code validates this format before making any API calls. The actual value doesn't matter since the proxy uses its own GitHub token.
-
-### Step 9: Configure Claude Code for Interactive Mode
-
-Claude Code's interactive mode requires onboarding/auth to be marked as complete. Run this script **once**:
-
-```bash
-python3 << 'PYEOF'
-import json, time
-
-with open('/Users/YOUR_USERNAME/.claude.json') as f:
-    d = json.load(f)
-
-api_key = 'sk-ant-proxy00000000000000000000000000000000000000000000'
-d['customApiKeyResponses'] = {
-    'approved': [api_key[-8:], api_key[-4:], api_key[-12:]],
-    'rejected': []
-}
-d['hasCompletedOnboarding'] = True
-d['oauthComplete'] = True
-d['clientDataCache'] = {
-    'data': {
-        'accountStatus': {
-            'membershipTier': 'pro',
-            'isApiUser': True,
-            'hasActiveSubscription': True,
-            'tierName': 'API'
-        },
-        'billing': {
-            'hasActiveSubscription': True
-        }
-    },
-    'timestamp': int(time.time() * 1000)
-}
-
-with open('/Users/YOUR_USERNAME/.claude.json', 'w') as f:
-    json.dump(d, f, indent=2)
-
-print('Config updated')
-PYEOF
-```
-
-> Replace `YOUR_USERNAME` with your actual username (e.g., `macmini`).
-
-### Step 10: Verify Everything Works
-
-```bash
-# Test non-interactive mode
-claude -p "say hello"
-
-# Test interactive mode
-claude
-```
-
----
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/messages` | POST | Anthropic Messages API (main endpoint) |
-| `/v1/messages/count_tokens` | POST | Token counting (estimated) |
-| `/v1/models` | GET | List available models |
-| `/v1/models/:model` | GET | Model info |
-| `/health` | GET | Health check |
-
-## Model Mapping
-
-| Claude Model | GitHub Model |
-|--------------|--------------|
-| claude-3-5-sonnet-* | gpt-4o |
-| claude-3-opus-* | gpt-4o |
-| claude-3-sonnet-* | gpt-4o |
-| claude-3-haiku-* | gpt-4o-mini |
-| claude-sonnet-4-* | gpt-4o |
-| claude-opus-4-* | gpt-4o |
-
-Customize in `server.js` under `MODEL_MAP`.
-
-## Management Commands
-
-| Action | Command |
-|--------|---------|
-| Check proxy status | `curl http://localhost:8080/health` |
-| View logs | `cat /tmp/copilot-proxy.log` |
-| View errors | `cat /tmp/copilot-proxy.error.log` |
-| Stop proxy | `launchctl unload ~/Library/LaunchAgents/com.copilot.proxy.plist` |
-| Start proxy | `launchctl load ~/Library/LaunchAgents/com.copilot.proxy.plist` |
-| Restart proxy | `launchctl unload ~/Library/LaunchAgents/com.copilot.proxy.plist && launchctl load ~/Library/LaunchAgents/com.copilot.proxy.plist` |
 
 ## Troubleshooting
 
@@ -304,20 +187,20 @@ Your GitHub token needs **Models → Read** permission. Regenerate or edit the t
 The proxy auto-caps at 16384. If you still see this, restart the proxy.
 
 ### Claude Code shows login screen
-1. Verify env vars: `env | grep ANTHROPIC`
-2. Re-run the Step 9 config script
-3. Open a new terminal and try again
+1. Verify env vars are set (see platform-specific guide)
+2. Run the `patch-claude-config` script for your platform
+3. **Restart VS Code completely** (close all windows)
 
 ### Connection refused
 Ensure the proxy is running: `curl http://localhost:8080/health`
 
 ## Key Gotchas
 
-1. **API key format**: Must start with `sk-ant-` — Claude Code validates the prefix
+1. **API key format**: The `ANTHROPIC_API_KEY` must start with `sk-ant-` — Claude Code validates the prefix
 2. **Token permissions**: GitHub PAT needs `models` read access
 3. **max_tokens**: GitHub Models API caps at 16384 (proxy handles this)
-4. **Interactive mode**: Requires `~/.claude.json` config patches (Step 9)
-5. **VS Code terminals**: Need `launchctl setenv` for env vars to propagate
+4. **Interactive mode**: Requires `~/.claude.json` config patches (use the `patch-claude-config` script)
+5. **Environment variables**: Restart VS Code after setting them — it reads env vars at launch
 
 ## License
 
